@@ -17,7 +17,6 @@ st.markdown("""
     .stSelectbox, .stSlider { color: #ffffff !important; }
     .stExpander { background-color: #161b26 !important; border: 1px solid #232d3f !important; border-radius: 6px !important; margin-bottom: 6px !important; }
     div[data-testid="stDataFrame"] { background-color: #161b26 !important; border-radius: 6px; }
-    /* Tabs customization to prevent overlapping and look sharp */
     button[data-baseweb="tab"] { font-size: 15px !important; font-weight: bold !important; color: #8a94a6 !important; }
     button[aria-selected="true"] { color: #00e676 !important; border-bottom-color: #00e676 !important; }
     </style>
@@ -195,11 +194,10 @@ if not raw_data.empty and 'Close' in raw_data:
         ax.tick_params(colors='#475569', labelsize=9)
         st.pyplot(fig, use_container_width=True)
 
-        # --- FIXED UI: OVERLAPPING ERROR REPLACED WITH STOCKMOJO TABS ---
+        # --- FIX: SPACES AND TABS PROPERLY ALIGNED FOR ALL TABS BLOCKS ---
         st.markdown("### 📋 Quadrant Allocation Matrix")
         df_summary = pd.DataFrame(table_rows)
 
-        # Generating 4 high-fidelity safe tabs layouts
         tab_lead, tab_imp, tab_weak, tab_lag = st.tabs(["🟩 Leading", "🟦 Improving", "🟨 Weakening", "🟥 Lagging"])
 
         with tab_lead:
@@ -207,3 +205,4 @@ if not raw_data.empty and 'Close' in raw_data:
             st.dataframe(df_lead.sort_values(by="RETURN %", ascending=False), hide_index=True, use_container_width=True)
 
         with tab_imp:
+            df_imp = df_summary[df_summary["QUADRANT"] == "IMPROVING"][["SYMBOL", "RS-RATIO", "RS-MOMENTUM", "RETURN %"]]
