@@ -6,13 +6,19 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import make_interp_spline
 from datetime import datetime, timedelta
 
-# Website Page Configuration (Wide-screen forced)
-st.set_page_config(page_title="Professional Wide RRG Dashboard", layout="wide")
+# Page config to force full fluid wide-screen like Strike Money
+st.set_page_config(page_title="RRG Professional Dashboard", layout="wide")
 
-st.title("📊 Dynamic Multi-Timeframe Volume-Weighted RRG")
-st.sidebar.header("📊 Advanced Controls")
+st.markdown("""
+    <style>
+    .stApp { background-color: #151924; color: white; }
+    div.stButton > button:first-child { background-color: #26a69a; color: white; border: none; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- 1. SECTOR MAP DEFINITION ---
+st.title("📈 Relative Rotation Graph (RRG) - Premium Studio")
+
+# --- 1. SECTOR / STOCK CORE DATA ---
 sector_map = {
     "All Sectors": [
         "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", 
@@ -31,170 +37,169 @@ sector_map = {
     "Energy & Infrastructure": ["RELIANCE.NS", "NTPC.NS", "ADANIPORTS.NS", "GRASIM.NS", "INDIGO.NS"]
 }
 
-# --- 2. MULTI-TIMEFRAME DROPDOWN CONFIGURATION ---
-timeframe_option = st.sidebar.selectbox(
-    "Select Timeframe",
-    ["Daily (Swing)", "1 Hour (Intraday)", "Weekly (Positional)"]
-)
+# --- 2. SIDEBAR PREMIUM INPUT CONTROL ENGINE ---
+st.sidebar.markdown("### ⚙️ Engine Configurations")
+timeframe_option = st.sidebar.selectbox("TIMEFRAME", ["Daily", "1 Hour", "Weekly"])
+benchmark_option = st.sidebar.selectbox("BENCHMARK", ["Nifty 500 (^CRSLDX)", "Nifty 50 (^NSEI)", "Nifty Bank (^NSEBANK)"])
+selected_sector = st.sidebar.selectbox("SECTOR FILTER", list(sector_map.keys()))
+base_tail_days = st.sidebar.slider("COUNTS / DAYS (Tail)", min_value=3, max_value=15, value=5)
 
-if timeframe_option == "1 Hour (Intraday)":
-    interval = "1h"
-    days_back = 30  
-    pct_period = 7  
-elif timeframe_option == "Weekly (Positional)":
-    interval = "1wk"
-    days_back = 730 
-    pct_period = 4  
-else:
-    interval = "1d"
-    days_back = 500 
-    pct_period = 5  
-
-benchmark_option = st.sidebar.selectbox(
-    "Select Benchmark Index",
-    ["Nifty 500 (^CRSLDX)", "Nifty 50 (^NSEI)", "Nifty Bank (^NSEBANK)"]
-)
 ticker_benchmark = benchmark_option.split("(")[-1].replace(")", "")
 
-selected_sector = st.sidebar.selectbox("Select Market Sector", list(sector_map.keys()))
-base_tail_days = st.sidebar.slider("Base Trail Length (Points)", min_value=4, max_value=15, value=6)
+if timeframe_option == "1 Hour":
+    interval, days_back, pct_period = "1h", 30, 7
+elif timeframe_option == "Weekly":
+    interval, days_back, pct_period = "1wk", 730, 4
+else:
+    interval, days_back, pct_period = "1d", 500, 5
 
 end_date = datetime.today()
 start_date = end_date - timedelta(days=days_back)
-
 sector_stocks = sector_map[selected_sector]
-selected_stocks = st.sidebar.multiselect("Add / Remove Stocks", sector_stocks, default=sector_stocks)
 
-if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(selected_stocks) >= 2:
-    with st.spinner(f"Processing Multi-Timeframe Data ({interval}) for {selected_sector}..."):
+with st.spinner("Syncing Live Market Feeds..."):
+    data = yf.download(sector_stocks + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
+
+if 'Close' in data and not data['Close'].empty:
+    close_prices = data['Close'].dropna()
+    volumes = data['Volume'].loc[close_prices.index]
+    
+    # Live Last Price & % Change calculation
+    last_prices = close_prices[sector_stocks].iloc[-1]
+    pct_changes = close_prices[sector_stocks].pct_change(periods=pct_period).iloc[-1] * 100
+
+    # RRG Vector Engineering Matrix
+    rs_df = pd.DataFrame(index=close_prices.index)
+    for stock in sector_stocks:
+        rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
+
+    rs_mean = rs_df.rolling(window=14).mean()
+    rs_std = rs_df.rolling(window=14).std()
+    rs_ratio = 100 + ((rs_df - rs_mean) / (rs_std + 1e-8)) * 1.2
+
+    rs_roc = rs_df.pct_change(periods=5)
+    vol_mean = volumes[sector_stocks].rolling(window=14).mean()
+    vol_std = volumes[sector_stocks].rolling(window=14).std()
+    norm_volume = (volumes[sector_stocks] - vol_mean) / (vol_std + 1e-8)
+
+    raw_momentum = rs_roc * np.tanh(norm_volume)
+    mom_mean = raw_momentum.rolling(window=14).mean()
+    mom_std = raw_momentum.rolling(window=14).std()
+    rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
+
+    # Parse and structural loop generation
+    summary_list = []
+    for stock in sector_stocks:
+        x_val = rs_ratio[stock].dropna().iloc[-1]
+        y_val = rs_momentum[stock].dropna().iloc[-1]
         
-        data = yf.download(selected_stocks + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
+        if x_val >= 100 and y_val >= 100: quad = "LEADING"
+        elif x_val >= 100 and y_val < 100: quad = "WEAKENING"
+        elif x_val < 100 and y_val < 100: quad = "LAGGING"
+        else: quad = "IMPROVING"
+            
+        summary_list.append({
+            "Active": True,
+            "SYMBOL": stock.replace('.NS', ''),
+            "QUADRANT": quad,
+            "PRICE (₹)": round(last_prices[stock], 2),
+            "CHANGE %": round(pct_changes[stock], 2),
+            "raw_x": x_ratio_val := rs_ratio[stock].dropna(),
+            "raw_y": y_momentum_val := rs_momentum[stock].dropna()
+        })
+
+    df_controls = pd.DataFrame(summary_list)
+
+    # --- STRIKE MONEY UI GRID SPLIT ---
+    # Left Column: Interactive Watchlist Table Matrix | Right Column: Clean RRG Chart Frame [1]
+    col_left, col_right = st.columns([2, 3]) 
+
+    with col_left:
+        st.markdown("### 📋 Symbols Matrix")
+        # Streamlit Data Editor acts as clickable table lists with checkboxes [1]
+        edited_df = st.data_editor(
+            df_controls[["Active", "SYMBOL", "QUADRANT", "PRICE (₹)", "CHANGE %"]],
+            column_config={
+                "Active": st.column_config.CheckboxColumn("View", default=True),
+                "CHANGE %": st.column_config.NumberColumn(format="%.2f%%"),
+                "PRICE (₹)": st.column_config.NumberColumn(format="₹%.2f")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
         
-        if 'Close' in data and not data['Close'].empty:
-            close_prices = data['Close'].dropna()
-            volumes = data['Volume'].loc[close_prices.index]
+        # Filter stocks live based on checkbox table selections
+        active_symbols = edited_df[edited_df["Active"] == True]["SYMBOL"].tolist()
+        active_tickers = [s + ".NS" for s in active_symbols]
 
-            pct_changes = close_prices[selected_stocks].pct_change(periods=pct_period).iloc[-1] * 100
-
-            rs_df = pd.DataFrame(index=close_prices.index)
-            for stock in selected_stocks:
-                rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
-
-            rs_mean = rs_df.rolling(window=14).mean()
-            rs_std = rs_df.rolling(window=14).std()
-            rs_ratio = 100 + ((rs_df - rs_mean) / (rs_std + 1e-8)) * 1.2
-
-            rs_roc = rs_df.pct_change(periods=5)
-            vol_mean = volumes[selected_stocks].rolling(window=14).mean()
-            vol_std = volumes[selected_stocks].rolling(window=14).std()
-            norm_volume = (volumes[selected_stocks] - vol_mean) / (vol_std + 1e-8)
-
-            raw_momentum = rs_roc * np.tanh(norm_volume)
-            mom_mean = raw_momentum.rolling(window=14).mean()
-            mom_std = raw_momentum.rolling(window=14).std()
-            rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
-
+    with col_right:
+        if len(active_tickers) >= 1:
             all_x, all_y = [], []
-            valid_stocks = []
             stock_tail_lengths = {}
 
-            for stock in selected_stocks:
+            for stock in active_tickers:
                 stock_perf = abs(pct_changes[stock])
                 calculated_tail = int(np.clip(base_tail_days + int(stock_perf / 2), 3, 15))
                 stock_tail_lengths[stock] = calculated_tail
                 
-                x_vals = rs_ratio[stock].dropna().iloc[-calculated_tail:].values
-                y_vals = rs_momentum[stock].dropna().iloc[-calculated_tail:].values
-                if len(x_vals) == calculated_tail and len(y_vals) == calculated_tail:
-                    all_x.extend(x_vals)
-                    all_y.extend(y_vals)
-                    valid_stocks.append(stock)
+                all_x.extend(rs_ratio[stock].dropna().iloc[-calculated_tail:].values)
+                all_y.extend(rs_momentum[stock].dropna().iloc[-calculated_tail:].values)
 
-            if all_x and all_y:
-                min_x, max_x = min(all_x) - 0.5, max(all_x) + 0.5
-                min_y, max_y = min(all_y) - 0.5, max(all_y) + 0.5
-            else:
-                min_x, max_x = 98.0, 102.0
-                min_y, max_y = 98.0, 102.0
+            min_x, max_x = min(all_x) - 0.4, max(all_x) + 0.4
+            min_y, max_y = min(all_y) - 0.4, max(all_y) + 0.4
 
-            # --- BIG CHANNELS FORMAT (COLUMNS HATA DIYE HAIN PAR EXTRA WIDTH DE DI HAI) ---
-            fig, ax = plt.subplots(figsize=(15, 8.5), facecolor='#151924') # Graph width increased to 15
+            # --- ULTRA CLEAN GRAPH FRAME ---
+            fig, ax = plt.subplots(figsize=(11, 8.5), facecolor='#151924')
             ax.set_facecolor('#151924')
 
-            ax.axvspan(100, max_x + 2, ymin=0.5, ymax=1.0, facecolor='#1b2a24', alpha=0.9)
-            ax.axvspan(100, max_x + 2, ymin=0.0, ymax=0.5, facecolor='#2c271e', alpha=0.9)
-            ax.axvspan(min_x - 2, 100, ymin=0.0, ymax=0.5, facecolor='#2d1f21', alpha=0.9)
-            ax.axvspan(min_x - 2, 100, ymin=0.5, ymax=1.0, facecolor='#1b2436', alpha=0.9)
+            # Soft transperant uniform quadrants
+            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) # Leading
+            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) # Weakening
+            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) # Lagging
+            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) # Improving
 
-            ax.axhline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
-            ax.axvline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
-            ax.grid(True, color='#262c3c', linestyle='-', linewidth=0.8, alpha=0.8, zorder=1)
+            # Thin clean axis borders
+            ax.axhline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
+            ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
+            ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-            ax.text(max_x - 0.2, max_y - 0.2, 'Leading', color='#26a69a', fontsize=16, fontweight='bold', ha='right', va='top')
-            ax.text(max_x - 0.2, min_y + 0.2, 'Weakening', color='#ffb300', fontsize=16, fontweight='bold', ha='right', va='bottom')
-            ax.text(min_x + 0.2, min_y + 0.2, 'Lagging', color='#ef5350', fontsize=16, fontweight='bold', ha='left', va='bottom')
-            ax.text(min_x + 0.2, max_y - 0.2, 'Improving', color='#29b6f6', fontsize=16, fontweight='bold', ha='left', va='top')
+            # Clean outer corner quadrant labels matching Strike Money [1]
+            ax.text(max_x, max_y, 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
+            ax.text(max_x, min_y, 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
+            ax.text(min_x, min_y, 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
+            ax.text(min_x, max_y, 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
 
             cmap = plt.colormaps.get_cmap('rainbow')
-            colors = [cmap(i) for i in np.linspace(0, 1, len(valid_stocks))]
+            colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
 
-            summary_data = []
-
-            for idx, stock in enumerate(valid_stocks):
+            # Premium Spline Curves Plotting Engine
+            for idx, stock in enumerate(active_tickers):
                 t_len = stock_tail_lengths[stock]
                 x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
                 y_trail = rs_momentum[stock].dropna().iloc[-t_len:].values
                 
                 stock_color = colors[idx]
                 t = np.arange(len(x_trail))
-                t_new = np.linspace(0, len(x_trail) - 1, 50)
+                t_new = np.linspace(0, len(x_trail) - 1, 60) # High density subpoints
                 
                 spl_x = make_interp_spline(t, x_trail, k=3)
                 spl_y = make_interp_spline(t, y_trail, k=3)
                 
-                ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
-                ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.4, zorder=5)
-                ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=90, edgecolors='white', linewidth=1.5, zorder=6)
+                # Plot dynamic fluid line curves
+                ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.0, color=stock_color, alpha=0.8, zorder=5)
+                ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.5, zorder=5)
+                ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=80, edgecolors='white', linewidth=1.2, zorder=6)
                 
-                stock_return = pct_changes[stock]
-                sign = "+" if stock_return > 0 else ""
-                label_text = f"{stock.replace('.NS','')}\n({sign}{stock_return:.1f}%)"
-                
-                ax.annotate(label_text, (x_trail[-1], y_trail[-1]), textcoords="offset points", xytext=(0,10), 
-                            ha='center', color='#ffffff', fontsize=8, fontweight='bold', zorder=7,
-                            bbox=dict(boxstyle="round,pad=0.1", fc='#151924', alpha=0.7, edgecolor='none'))
-
-                latest_x = round(x_trail[-1], 2)
-                latest_y = round(y_trail[-1], 2)
-                
-                if latest_x >= 100 and latest_y >= 100: quadrant = "🟩 Leading"
-                elif latest_x >= 100 and latest_y < 100: quadrant = "🟨 Weakening"
-                elif latest_x < 100 and latest_y < 100: quadrant = "🟥 Lagging"
-                else: quadrant = "🟦 Improving"
-                
-                summary_data.append({
-                    "Stock Symbol": stock.replace('.NS', ''),
-                    "Return %": round(stock_return, 2),
-                    "Trail Points (Tail)": t_len,
-                    "RS-Ratio (Strength)": latest_x,
-                    "RS-Momentum (Momentum)": latest_y,
-                    "Current State": quadrant
-                })
+                # Small elegant floating stock name tag text
+                ax.text(x_trail[-1], y_trail[-1] + 0.05, stock.replace('.NS',''), color='#ffffff', 
+                        fontsize=8, fontweight='bold', ha='center', zorder=7)
 
             ax.set_xlim(min_x, max_x)
             ax.set_ylim(min_y, max_y)
-            ax.tick_params(colors='#8a94a6', labelsize=10)
+            ax.tick_params(colors='#616d82', labelsize=9)
             
-            # Pure wide-scale visualization rendering
             st.pyplot(fig, use_container_width=True)
-
-            # --- DYNAMIC HORIZONTAL TOP TRACKER GRID (CHART KE NICHE) ---
-            st.markdown("### 🏆 Live Market Pulse (Top Gainers)")
-            df_temp = pd.DataFrame(summary_data).sort_values(by="Return %", ascending=False)
-            
-            # Creating dynamic grid columns horizontally
-            g_cols = st.columns(min(len(df_temp), 5))
-            for i, (idx_row, row) in enumerate(df_temp.head(5).iterrows()):
-                with g_cols[i]:
-                    st.metric(label=row["Stock Symbol"], value=f"{row['Return %']}%", delta=row["Current State"])
-
+        else:
+            st.info("Please select checkboxes from the left panel table to load live trailing vectors.")
+else:
+    st.error("Data processing downtime. Check back during market sessions.")
