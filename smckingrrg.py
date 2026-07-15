@@ -28,7 +28,6 @@ sector_indices = {
     "AUTO": "^CNXAUTO",
     "ENERGY": "^CNXENERGY",
     "FMCG": "^CNXFMCG",
-    "HEALTHCARE": "^CNXPHARMA", # Pharma used as proxy for healthcare
     "INFRA": "^CNXINFRA",
     "IT": "^CNXIT",
     "MEDIA": "^CNXMEDIA",
@@ -41,7 +40,7 @@ sector_indices = {
 }
 
 all_index_tickers = list(sector_indices.values())
-ticker_benchmark = "^CRSLDX" # Nifty 500 Benchmark for core tracking
+ticker_benchmark = "^CRSLDX" # Nifty 500 Benchmark
 
 # --- 2. SIDEBAR ENGINE CONTROLS ---
 st.sidebar.markdown("### 🛠️ RRG Settings")
@@ -62,12 +61,23 @@ end_date = datetime.today()
 start_date = end_date - timedelta(days=days_back)
 
 with st.spinner("Downloading Live NSE Sectoral Feeds..."):
-    data = yf.download(all_index_tickers + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
+    # Download single-level columns directly to avoid multi-index errors
+    data = yf.download(all_index_tickers + [ticker_benchmark], start=start_date, end=end_date, interval=interval, group_by='ticker')
 
-if 'Close' in data and not data['Close'].empty:
-    close_prices = data['Close'].dropna()
-    volumes = data['Volume'].loc[close_prices.index]
+if not data.empty:
+    # Safely parse close and volume across downloaded dictionary matrix
+    close_prices = pd.DataFrame()
+    volumes = pd.DataFrame()
     
+    for t in all_index_tickers + [ticker_benchmark]:
+        if t in data.columns.levels[0]:
+            close_prices[t] = data[t]['Close']
+            volumes[t] = data[t]['Volume']
+            
+    close_prices = close_prices.dropna(subset=[ticker_benchmark])
+    volumes = volumes.loc[close_prices.index]
+    
+    # Accurate return calculation on 1D metrics
     pct_changes = close_prices[all_index_tickers].pct_change(periods=pct_period).iloc[-1] * 100
 
     # RRG Matrix Calculations for Whole Sectors
@@ -89,7 +99,6 @@ if 'Close' in data and not data['Close'].empty:
     mom_std = raw_momentum.rolling(window=14).std()
     rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
 
-    # Map Inverse Dict for clean displaying name
     inv_sector_map = {v: k for k, v in sector_indices.items()}
 
     summary_list = []
@@ -118,7 +127,6 @@ if 'Close' in data and not data['Close'].empty:
     with col_left:
         st.markdown("### 🗂️ Indices Watchlist")
         
-        # Interactive full height data editor acting as click checklist panel
         edited_df = st.data_editor(
             df_master[["Show", "SECTOR INDEX", "QUADRANT", "PERFORMANCE %"]],
             column_config={
