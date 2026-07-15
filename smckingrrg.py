@@ -7,7 +7,7 @@ from scipy.interpolate import make_interp_spline
 from datetime import datetime, timedelta
 
 # Page configuration for complete layout optimization
-st.set_page_config(page_title="Professional Studio Dashboard", layout="wide")
+st.set_page_config(page_title="RRG Professional Studio Dashboard", layout="wide")
 
 # Custom Premium Dark Theme CSS
 st.markdown("""
@@ -17,6 +17,9 @@ st.markdown("""
     .stSelectbox, .stSlider { color: #ffffff !important; }
     .stExpander { background-color: #161b26 !important; border: 1px solid #232d3f !important; border-radius: 6px !important; margin-bottom: 6px !important; }
     div[data-testid="stDataFrame"] { background-color: #161b26 !important; border-radius: 6px; }
+    /* Tabs customization to prevent overlapping and look sharp */
+    button[data-baseweb="tab"] { font-size: 15px !important; font-weight: bold !important; color: #8a94a6 !important; }
+    button[aria-selected="true"] { color: #00e676 !important; border-bottom-color: #00e676 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -96,7 +99,7 @@ if not raw_data.empty and 'Close' in raw_data:
 
     df_master = pd.DataFrame(master_summary)
 
-    # --- CONDITION 1: SECTOR FOLDERS MOVED ENTIRELY TO SIDEBAR ---
+    # --- SECTOR FOLDERS IN SIDEBAR PANEL ---
     st.sidebar.markdown("### 🗂️ Sector Folders")
     active_tickers = []
     
@@ -104,7 +107,6 @@ if not raw_data.empty and 'Close' in raw_data:
         clean_names = [s.replace('.NS', '') for s in stock_list]
         df_subset = df_master[df_master["SYMBOL"].isin(clean_names)].copy()
         
-        # Rendering expanders natively inside the sidebar panel frame
         with st.sidebar.expander(f"📁 {sector_name}"):
             edited_df = st.data_editor(
                 df_subset[["Active", "SYMBOL"]],
@@ -126,13 +128,13 @@ if not raw_data.empty and 'Close' in raw_data:
             calc_tail = int(np.clip(base_tail_days + int(perf_abs / 2), 3, 15))
             stock_tail_lengths[stock] = calc_tail
             
-            all_x.extend(rs_ratio[stock].dropna().iloc[-calculated_tail:].values if (calculated_tail := calc_tail) else [])
-            all_y.extend(rs_momentum[stock].dropna().iloc[-calculated_tail:].values if calculated_tail else [])
+            all_x.extend(rs_ratio[stock].dropna().iloc[-calc_tail:].values)
+            all_y.extend(rs_momentum[stock].dropna().iloc[-calc_tail:].values)
 
         min_x, max_x = min(all_x) - 0.4, max(all_x) + 0.4
         min_y, max_y = min(all_y) - 0.4, max(all_y) + 0.4
 
-        # Matplotlib High-Fidelity Render Engine Canvas Frame
+        # Matplotlib High-Fidelity Canvas
         fig, ax = plt.subplots(figsize=(15, 8.5), facecolor='#0e1118')
         ax.set_facecolor('#0e1118')
 
@@ -174,7 +176,6 @@ if not raw_data.empty and 'Close' in raw_data:
             ax.text(x_trail[-1], y_trail[-1] + 0.015, stock.replace('.NS',''), color='#ffffff', 
                     fontsize=8, fontweight='bold', ha='center', zorder=7)
 
-            # Store states dynamically for structural table columns dispatch mapping
             x_last, y_last = x_trail[-1], y_trail[-1]
             if x_last >= 100 and y_last >= 100: q_state = "LEADING"
             elif x_last >= 100 and y_last < 100: q_state = "WEAKENING"
@@ -194,18 +195,15 @@ if not raw_data.empty and 'Close' in raw_data:
         ax.tick_params(colors='#475569', labelsize=9)
         st.pyplot(fig, use_container_width=True)
 
-        # --- CONDITION 2: QUADRANT WISE COLUMNS DISPATCH DATA MATRIX ---
+        # --- FIXED UI: OVERLAPPING ERROR REPLACED WITH STOCKMOJO TABS ---
         st.markdown("### 📋 Quadrant Allocation Matrix")
         df_summary = pd.DataFrame(table_rows)
 
-        # Split dashboard layout into 4 distinct horizontal columns dynamically
-        q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+        # Generating 4 high-fidelity safe tabs layouts
+        tab_lead, tab_imp, tab_weak, tab_lag = st.tabs(["🟩 Leading", "🟦 Improving", "🟨 Weakening", "🟥 Lagging"])
 
-        with q_col1:
-            st.markdown("#### 🟩 Leading")
-            df_lead = df_summary[df_summary["QUADRANT"] == "LEADING"][["SYMBOL", "RETURN %"]]
-            st.dataframe(df_lead, hide_index=True, use_container_width=True)
+        with tab_lead:
+            df_lead = df_summary[df_summary["QUADRANT"] == "LEADING"][["SYMBOL", "RS-RATIO", "RS-MOMENTUM", "RETURN %"]]
+            st.dataframe(df_lead.sort_values(by="RETURN %", ascending=False), hide_index=True, use_container_width=True)
 
-        with q_col2:
-            st.markdown("#### 🖲️ Improving")
-            df_imp = df_summary[df_summary["QUADRANT"] == "IMPROVING"][["SYMBOL", "RETURN %"]]
+        with tab_imp:
