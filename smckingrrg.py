@@ -117,7 +117,8 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                 min_x, max_x = 98.0, 102.0
                 min_y, max_y = 98.0, 102.0
 
-            col1, col2 = st.columns([3, 1]) # Optimized split layout
+            # --- Layout View Setup ---
+            col1, col2 = st.columns([3, 1]) 
 
             with col1:
                 fig, ax = plt.subplots(figsize=(12, 9), facecolor='#151924')
@@ -174,19 +175,13 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                     elif latest_x < 100 and latest_y < 100: quadrant = "🟥 Lagging"
                     else: quadrant = "🟦 Improving"
                     
-                    # Cleaned color conversions to prevent parsing syntax crashes
-                    r_val = int(stock_color[0] * 255)
-                    g_val = int(stock_color[1] * 255)
-                    b_val = int(stock_color[2] * 255)
-                    
                     summary_data.append({
                         "Stock Symbol": stock.replace('.NS', ''),
                         "Return %": round(stock_return, 2),
-                        "Trail Points": t_len,
+                        "Trail Points (Tail)": t_len,
                         "RS-Ratio (Strength)": latest_x,
                         "RS-Momentum (Momentum)": latest_y,
-                        "Current State": quadrant,
-                        "r_v": r_val, "g_v": g_val, "b_v": b_val
+                        "Current State": quadrant
                     })
 
                 ax.set_xlim(min_x, max_x)
@@ -195,6 +190,10 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                 st.pyplot(fig)
 
             with col2:
-                # --- FIXED: STANDARD STRING INJECTION FOR LEGENDS INDEX ---
-                st.markdown("### 🏷️ Color Index")
-                for s_info in summary_data:
+                # --- FIXED: NO MORE COMPLEX HTML FOR LOOPS (ZERO INDENTATION RISK) ---
+                st.markdown("### 📈 Top Gainers")
+                df_temp = pd.DataFrame(summary_data).sort_values(by="Return %", ascending=False)
+                for _, row in df_temp.head(5).iterrows():
+                    st.metric(label=row["Stock Symbol"], value=f"{row['Return %']}%", delta=row["Current State"])
+
+            st.markdown("### 📋 Real-Time Multi-Timeframe Data Matrix")
