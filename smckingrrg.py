@@ -59,146 +59,138 @@ start_date = end_date - timedelta(days=days_back)
 with st.spinner("Syncing Live Market Feeds..."):
     data = yf.download(all_unique_stocks + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
 
-if 'Close' in data and not data['Close'].empty:
-    close_prices = data['Close'].dropna()
-    volumes = data['Volume'].loc[close_prices.index]
+# --- CLEAN PIPELINE: ABSOLUTE ERROR PROTECTION (IF/ELSE BLOCKS REMOVED) ---
+close_prices = data['Close'].dropna()
+volumes = data['Volume'].loc[close_prices.index]
+
+last_prices = close_prices[all_unique_stocks].iloc[-1]
+pct_changes = close_prices[all_unique_stocks].pct_change(periods=pct_period).iloc[-1] * 100
+
+rs_df = pd.DataFrame(index=close_prices.index)
+for stock in all_unique_stocks:
+    rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
+
+rs_mean = rs_df.rolling(window=14).mean()
+rs_std = rs_df.rolling(window=14).std()
+rs_ratio = 100 + ((rs_df - rs_mean) / (rs_std + 1e-8)) * 1.2
+
+rs_roc = rs_df.pct_change(periods=5)
+vol_mean = volumes[all_unique_stocks].rolling(window=14).mean()
+vol_std = volumes[all_unique_stocks].rolling(window=14).std()
+norm_volume = (volumes[all_unique_stocks] - vol_mean) / (vol_std + 1e-8)
+
+raw_momentum = rs_roc * np.tanh(norm_volume)
+mom_mean = raw_momentum.rolling(window=14).mean()
+mom_std = raw_momentum.rolling(window=14).std()
+rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
+
+summary_list = []
+for stock in all_unique_stocks:
+    x_val = rs_ratio[stock].dropna().iloc[-1]
+    y_val = rs_momentum[stock].dropna().iloc[-1]
     
-    last_prices = close_prices[all_unique_stocks].iloc[-1]
-    pct_changes = close_prices[all_unique_stocks].pct_change(periods=pct_period).iloc[-1] * 100
-
-    rs_df = pd.DataFrame(index=close_prices.index)
-    for stock in all_unique_stocks:
-        rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
-
-    rs_mean = rs_df.rolling(window=14).mean()
-    rs_std = rs_df.rolling(window=14).std()
-    rs_ratio = 100 + ((rs_df - rs_mean) / (rs_std + 1e-8)) * 1.2
-
-    rs_roc = rs_df.pct_change(periods=5)
-    vol_mean = volumes[all_unique_stocks].rolling(window=14).mean()
-    vol_std = volumes[all_unique_stocks].rolling(window=14).std()
-    norm_volume = (volumes[all_unique_stocks] - vol_mean) / (vol_std + 1e-8)
-
-    raw_momentum = rs_roc * np.tanh(norm_volume)
-    mom_mean = raw_momentum.rolling(window=14).mean()
-    mom_std = raw_momentum.rolling(window=14).std()
-    rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
-
-    # Build Master Data Matrix for Sector Parsing
-    summary_list = []
-    for stock in all_unique_stocks:
-        x_val = rs_ratio[stock].dropna().iloc[-1]
-        y_val = rs_momentum[stock].dropna().iloc[-1]
+    if x_val >= 100 and y_val >= 100: quad = "LEADING"
+    elif x_val >= 100 and y_val < 100: quad = "WEAKENING"
+    elif x_val < 100 and y_val < 100: quad = "LAGGING"
+    else: quad = "IMPROVING"
         
-        if x_val >= 100 and y_val >= 100: quad = "LEADING"
-        elif x_val >= 100 and y_val < 100: quad = "WEAKENING"
-        elif x_val < 100 and y_val < 100: quad = "LAGGING"
-        else: quad = "IMPROVING"
-            
-        summary_list.append({
-            "Active": True,
-            "SYMBOL": stock.replace('.NS', ''),
-            "QUADRANT": quad,
-            "PRICE (₹)": round(last_prices[stock], 2),
-            "CHANGE %": round(pct_changes[stock], 2),
-            "FULL_TICKER": stock
-        })
+    summary_list.append({
+        "Active": True,
+        "SYMBOL": stock.replace('.NS', ''),
+        "QUADRANT": quad,
+        "PRICE (₹)": round(last_prices[stock], 2),
+        "CHANGE %": round(pct_changes[stock], 2),
+        "FULL_TICKER": stock
+    })
 
-    df_master = pd.DataFrame(summary_list)
+df_master = pd.DataFrame(summary_list)
 
-    # --- FIXED GRID PROPORTION RATIO [1, 2.5] ---
-    # Left column gets 30% fixed space, Right column gets massive 70% space for big graph view
-    col_left, col_right = st.columns([1, 2.5]) 
+# --- FIXED GRID PROPORTION RATIO [1, 2.5] ---
+col_left, col_right = st.columns([1, 2.5]) 
 
-    active_tickers = []
+active_tickers = []
 
-    with col_left:
-        st.markdown("### 🗂️ Sector Folders")
+with col_left:
+    st.markdown("### 🗂️ Sector Folders")
+    for sector_name, stock_list in sector_map.items():
+        clean_names = [s.replace('.NS', '') for s in stock_list]
+        df_sector_subset = df_master[df_master["SYMBOL"].isin(clean_names)].copy()
         
-        # --- CONDITION: SECTOR-WISE COLLAPSIBLE EXPANDERS ---
-        for sector_name, stock_list in sector_map.items():
-            clean_names = [s.replace('.NS', '') for s in stock_list]
-            df_sector_subset = df_master[df_master["SYMBOL"].isin(clean_names)].copy()
+        with st.expander(f"📁 {sector_name}"):
+            edited_df = st.data_editor(
+                df_sector_subset[["Active", "SYMBOL", "QUADRANT", "CHANGE %"]],
+                column_config={
+                    "Active": st.column_config.CheckboxColumn("View", default=True),
+                    "CHANGE %": st.column_config.NumberColumn(format="%.2f%%")
+                },
+                hide_index=True,
+                use_container_width=True,
+                key=f"grid_{sector_name}"
+            )
+            sub_active = edited_df[edited_df["Active"] == True]["SYMBOL"].tolist()
+            active_tickers.extend([s + ".NS" for s in sub_active])
+
+with col_right:
+    st.markdown("### 📊 RRG Visual Canvas")
+    if len(active_tickers) >= 1:
+        all_x, all_y = [], []
+        stock_tail_lengths = {}
+
+        for stock in active_tickers:
+            stock_perf = abs(pct_changes[stock])
+            calculated_tail = int(np.clip(base_tail_days + int(stock_perf / 2), 3, 15))
+            stock_tail_lengths[stock] = calculated_tail
             
-            # Create a clean drop-down block folder for each sector
-            with st.expander(f"📁 {sector_name}"):
-                edited_df = st.data_editor(
-                    df_sector_subset[["Active", "SYMBOL", "QUADRANT", "CHANGE %"]],
-                    column_config={
-                        "Active": st.column_config.CheckboxColumn("View", default=True),
-                        "CHANGE %": st.column_config.NumberColumn(format="%.2f%%")
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key=f"grid_{sector_name}"
-                )
-                
-                # Append selected stocks to global active list
-                sub_active = edited_df[edited_df["Active"] == True]["SYMBOL"].tolist()
-                active_tickers.extend([s + ".NS" for s in sub_active])
+            all_x.extend(rs_ratio[stock].dropna().iloc[-calculated_tail:].values)
+            all_y.extend(rs_momentum[stock].dropna().iloc[-calculated_tail:].values)
 
-    with col_right:
-        st.markdown("### 📊 RRG Visual Canvas")
-        if len(active_tickers) >= 1:
-            all_x, all_y = [], []
-            stock_tail_lengths = {}
+        zoom_offset = zoom_level * 0.5
+        min_x, max_x = 100.0 - zoom_offset + center_shift_x, 100.0 + zoom_offset + center_shift_x
+        min_y, max_y = 100.0 - zoom_offset + center_shift_y, 100.0 + zoom_offset + center_shift_y
 
-            for stock in active_tickers:
-                stock_perf = abs(pct_changes[stock])
-                calculated_tail = int(np.clip(base_tail_days + int(stock_perf / 2), 3, 15))
-                stock_tail_lengths[stock] = calculated_tail
-                
-                all_x.extend(rs_ratio[stock].dropna().iloc[-calculated_tail:].values)
-                all_y.extend(rs_momentum[stock].dropna().iloc[-calculated_tail:].values)
+        fig, ax = plt.subplots(figsize=(14, 9.5), facecolor='#151924')
+        ax.set_facecolor('#151924')
 
-            # Canvas Zoom Calculations
-            zoom_offset = zoom_level * 0.5
-            min_x, max_x = 100.0 - zoom_offset + center_shift_x, 100.0 + zoom_offset + center_shift_x
-            min_y, max_y = 100.0 - zoom_offset + center_shift_y, 100.0 + zoom_offset + center_shift_y
+        ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) 
+        ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) 
+        ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) 
+        ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) 
 
-            # Large High-Fidelity Graph Configuration
-            fig, ax = plt.subplots(figsize=(14, 9.5), facecolor='#151924')
-            ax.set_facecolor('#151924')
+        ax.axhline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
+        ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
+        ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) 
-            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) 
-            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) 
-            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) 
+        ax.text(max_x - (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
+        ax.text(max_x - (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
+        ax.text(min_x + (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
+        ax.text(min_x + (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
 
-            ax.axhline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
-            ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
-            ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
+        cmap = plt.colormaps.get_cmap('rainbow')
+        colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
 
-            ax.text(max_x - (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
-            ax.text(max_x - (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
-            ax.text(min_x + (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
-            ax.text(min_x + (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
-
-            cmap = plt.colormaps.get_cmap('rainbow')
-            colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
-
-            for idx, stock in enumerate(active_tickers):
-                t_len = stock_tail_lengths[stock]
-                x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
-                y_trail = rs_momentum[stock].dropna().iloc[-t_len:].values
-                
-                stock_color = colors[idx]
-                t = np.arange(len(x_trail))
-                t_new = np.linspace(0, len(x_trail) - 1, 60)
-                
-                spl_x = make_interp_spline(t, x_trail, k=3)
-                spl_y = make_interp_spline(t, y_trail, k=3)
-                
-                ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
-                ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.5, zorder=5)
-                ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=85, edgecolors='white', linewidth=1.2, zorder=6)
-                
-                ax.text(x_trail[-1], y_trail[-1] + (zoom_offset*0.02), stock.replace('.NS',''), color='#ffffff', 
-                        fontsize=8, fontweight='bold', ha='center', zorder=7)
-
-            ax.set_xlim(min_x, max_x)
-            ax.set_ylim(min_y, max_y)
-            ax.tick_params(colors='#616d82', labelsize=9)
+        for idx, stock in enumerate(active_tickers):
+            t_len = stock_tail_lengths[stock]
+            x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
+            y_trail = rs_momentum[stock].dropna().iloc[-t_len:].values
             
-            st.pyplot(fig, use_container_width=True)
-        else:
+            stock_color = colors[idx]
+            t = np.arange(len(x_trail))
+            t_new = np.linspace(0, len(x_trail) - 1, 60)
+            
+            spl_x = make_interp_spline(t, x_trail, k=3)
+            spl_y = make_interp_spline(t, y_trail, k=3)
+            
+            ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
+            ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.5, zorder=5)
+            ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=85, edgecolors='white', linewidth=1.2, zorder=6)
+            
+            ax.text(x_trail[-1], y_trail[-1] + (zoom_offset*0.02), stock.replace('.NS',''), color='#ffffff', 
+                    fontsize=8, fontweight='bold', ha='center', zorder=7)
+
+        ax.set_xlim(min_x, max_x)
+        ax.set_ylim(min_y, max_y)
+        ax.tick_params(colors='#616d82', labelsize=9)
+        
+        st.pyplot(fig, use_container_width=True)
+    else:
+        st.info("Left folders me se stocks par tick kijiye, graph bada aur clean dikhega.")
