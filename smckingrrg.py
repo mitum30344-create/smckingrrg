@@ -7,7 +7,7 @@ from scipy.interpolate import make_interp_spline
 from datetime import datetime, timedelta
 
 # Website Page Configuration
-st.set_page_config(page_title="Strikemoney Style Multi-Timeframe RRG", layout="wide")
+st.set_page_config(page_title="Professional RRG Dashboard", layout="wide")
 
 st.title("📊 Dynamic Multi-Timeframe Volume-Weighted RRG")
 st.sidebar.header("📊 Advanced Controls")
@@ -37,19 +37,18 @@ timeframe_option = st.sidebar.selectbox(
     ["Daily (Swing)", "1 Hour (Intraday)", "Weekly (Positional)"]
 )
 
-# Mapping yfinance intervals and calculation parameters based on selected timeframe
 if timeframe_option == "1 Hour (Intraday)":
     interval = "1h"
-    days_back = 30  # Fetch last 30 days for hourly bars
-    pct_period = 7  # 7 hours lookback for return%
+    days_back = 30  
+    pct_period = 7  
 elif timeframe_option == "Weekly (Positional)":
     interval = "1wk"
-    days_back = 730 # 2 years for weekly bars
-    pct_period = 4  # 4 weeks lookback for return%
+    days_back = 730 
+    pct_period = 4  
 else:
     interval = "1d"
-    days_back = 500 # Normal daily configuration
-    pct_period = 5  # 5 days lookback for return%
+    days_back = 500 
+    pct_period = 5  
 
 benchmark_option = st.sidebar.selectbox(
     "Select Benchmark Index",
@@ -69,17 +68,14 @@ selected_stocks = st.sidebar.multiselect("Add / Remove Stocks", sector_stocks, d
 if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(selected_stocks) >= 2:
     with st.spinner(f"Processing Multi-Timeframe Data ({interval}) for {selected_sector}..."):
         
-        # Download Data with interval binding
         data = yf.download(selected_stocks + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
         
         if 'Close' in data and not data['Close'].empty:
             close_prices = data['Close'].dropna()
             volumes = data['Volume'].loc[close_prices.index]
 
-            # % Change Calculation for Dynamic Trail Engine
             pct_changes = close_prices[selected_stocks].pct_change(periods=pct_period).iloc[-1] * 100
 
-            # RRG Calculations
             rs_df = pd.DataFrame(index=close_prices.index)
             for stock in selected_stocks:
                 rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
@@ -102,10 +98,8 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
             valid_stocks = []
             stock_tail_lengths = {}
 
-            # --- DYNAMIC TRAIL CALCULATION LOGIC ---
             for stock in selected_stocks:
                 stock_perf = abs(pct_changes[stock])
-                # Scaling factor: performance ke basis par trail length customize ki (Min 3, Max 15 points)
                 calculated_tail = int(np.clip(base_tail_days + int(stock_perf / 2), 3, 15))
                 stock_tail_lengths[stock] = calculated_tail
                 
@@ -123,13 +117,12 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                 min_x, max_x = 98.0, 102.0
                 min_y, max_y = 98.0, 102.0
 
-            col1, col2 = st.columns([4, 1])
+            col1, col2 = st.columns([3, 1]) # Optimized split layout
 
             with col1:
                 fig, ax = plt.subplots(figsize=(12, 9), facecolor='#151924')
                 ax.set_facecolor('#151924')
 
-                # Background Layout Tint
                 ax.axvspan(100, max_x + 2, ymin=0.5, ymax=1.0, facecolor='#1b2a24', alpha=0.9)
                 ax.axvspan(100, max_x + 2, ymin=0.0, ymax=0.5, facecolor='#2c271e', alpha=0.9)
                 ax.axvspan(min_x - 2, 100, ymin=0.0, ymax=0.5, facecolor='#2d1f21', alpha=0.9)
@@ -149,7 +142,6 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
 
                 summary_data = []
 
-                # Curve Rendering
                 for idx, stock in enumerate(valid_stocks):
                     t_len = stock_tail_lengths[stock]
                     x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
@@ -162,12 +154,10 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                     spl_x = make_interp_spline(t, x_trail, k=3)
                     spl_y = make_interp_spline(t, y_trail, k=3)
                     
-                    # 1. Plot Custom Length Dynamic Tail
                     ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
                     ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.4, zorder=5)
                     ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=90, edgecolors='white', linewidth=1.5, zorder=6)
                     
-                    # 2. Live % Value Label on Head Marker
                     stock_return = pct_changes[stock]
                     sign = "+" if stock_return > 0 else ""
                     label_text = f"{stock.replace('.NS','')}\n({sign}{stock_return:.1f}%)"
@@ -184,6 +174,11 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                     elif latest_x < 100 and latest_y < 100: quadrant = "🟥 Lagging"
                     else: quadrant = "🟦 Improving"
                     
+                    # Cleaned color conversions to prevent parsing syntax crashes
+                    r_val = int(stock_color[0] * 255)
+                    g_val = int(stock_color[1] * 255)
+                    b_val = int(stock_color[2] * 255)
+                    
                     summary_data.append({
                         "Stock Symbol": stock.replace('.NS', ''),
                         "Return %": round(stock_return, 2),
@@ -191,4 +186,15 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                         "RS-Ratio (Strength)": latest_x,
                         "RS-Momentum (Momentum)": latest_y,
                         "Current State": quadrant,
-                    "Hex Color": f"background-color: rgb({int(stock_color[0]*255)}, {int(stock_color[1]*255)}, {int(stock_color[2]*255)}, 0.2)"})ax.set_xlim(min_x, max_x)ax.set_ylim(min_y, max_y)ax.tick_params(colors='#8a94a6', labelsize=10)st.pyplot(fig)with col2:st.markdown("### 🏷️ Color & Perf Index")for s_info in summary_data:perf_color = "#26a69a" if s_info["Return %"] >= 0 else "#ef5350"st.markdown(f"<div style='padding: 6px; margin-bottom: 4px; border-radius: 4px; {s_info['Hex Color']}; color: white; border-left: 4px solid {perf_color}; font-size:13px;'>"f"{s_info['Stock Symbol']}: {s_info['Return %']}% (Tail: {s_info['Trail Points']}d)",unsafe_allow_html=True)st.markdown("### 📋 Real-Time Multi-Timeframe Data Matrix")df_summary = pd.DataFrame(summary_data).drop(columns=["Hex Color"])# Highlight returns column matching professional dashboardsst.dataframe(df_summary.sort_values(by="Return %", ascending=False),column_config={"Return %": st.column_config.NumberColumn(format="%.2f%%"),"RS-Ratio (Strength)": st.column_config.NumberColumn(format="%.2f"),"RS-Momentum (Momentum)": st.column_config.NumberColumn(format="%.2f"),},use_container_width=True,hide_index=True)else:st.error("No active timeframe market data fetched. Note: Hourly charts (1H) are available only during live market days.")else:st.info("Please make sure at least 2 stocks are selected to plot sector mapping.")
+                        "r_v": r_val, "g_v": g_val, "b_v": b_val
+                    })
+
+                ax.set_xlim(min_x, max_x)
+                ax.set_ylim(min_y, max_y)
+                ax.tick_params(colors='#8a94a6', labelsize=10)
+                st.pyplot(fig)
+
+            with col2:
+                # --- FIXED: STANDARD STRING INJECTION FOR LEGENDS INDEX ---
+                st.markdown("### 🏷️ Color Index")
+                for s_info in summary_data:
