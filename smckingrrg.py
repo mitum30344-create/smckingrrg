@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import make_interp_spline
 from datetime import datetime, timedelta
 
-# Website Page Configuration
-st.set_page_config(page_title="Professional RRG Dashboard", layout="wide")
+# Website Page Configuration (Wide-screen forced)
+st.set_page_config(page_title="Professional Wide RRG Dashboard", layout="wide")
 
 st.title("📊 Dynamic Multi-Timeframe Volume-Weighted RRG")
 st.sidebar.header("📊 Advanced Controls")
@@ -117,83 +117,84 @@ if (st.sidebar.button("Calculate Dynamic Rotation") or selected_stocks) and len(
                 min_x, max_x = 98.0, 102.0
                 min_y, max_y = 98.0, 102.0
 
-            # --- Layout View Setup ---
-            col1, col2 = st.columns([3, 1]) 
+            # --- BIG CHANNELS FORMAT (COLUMNS HATA DIYE HAIN PAR EXTRA WIDTH DE DI HAI) ---
+            fig, ax = plt.subplots(figsize=(15, 8.5), facecolor='#151924') # Graph width increased to 15
+            ax.set_facecolor('#151924')
 
-            with col1:
-                fig, ax = plt.subplots(figsize=(12, 9), facecolor='#151924')
-                ax.set_facecolor('#151924')
+            ax.axvspan(100, max_x + 2, ymin=0.5, ymax=1.0, facecolor='#1b2a24', alpha=0.9)
+            ax.axvspan(100, max_x + 2, ymin=0.0, ymax=0.5, facecolor='#2c271e', alpha=0.9)
+            ax.axvspan(min_x - 2, 100, ymin=0.0, ymax=0.5, facecolor='#2d1f21', alpha=0.9)
+            ax.axvspan(min_x - 2, 100, ymin=0.5, ymax=1.0, facecolor='#1b2436', alpha=0.9)
 
-                ax.axvspan(100, max_x + 2, ymin=0.5, ymax=1.0, facecolor='#1b2a24', alpha=0.9)
-                ax.axvspan(100, max_x + 2, ymin=0.0, ymax=0.5, facecolor='#2c271e', alpha=0.9)
-                ax.axvspan(min_x - 2, 100, ymin=0.0, ymax=0.5, facecolor='#2d1f21', alpha=0.9)
-                ax.axvspan(min_x - 2, 100, ymin=0.5, ymax=1.0, facecolor='#1b2436', alpha=0.9)
+            ax.axhline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
+            ax.axvline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
+            ax.grid(True, color='#262c3c', linestyle='-', linewidth=0.8, alpha=0.8, zorder=1)
 
-                ax.axhline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
-                ax.axvline(100, color='#3a4152', linestyle='-', linewidth=2.0, zorder=3)
-                ax.grid(True, color='#262c3c', linestyle='-', linewidth=0.8, alpha=0.8, zorder=1)
+            ax.text(max_x - 0.2, max_y - 0.2, 'Leading', color='#26a69a', fontsize=16, fontweight='bold', ha='right', va='top')
+            ax.text(max_x - 0.2, min_y + 0.2, 'Weakening', color='#ffb300', fontsize=16, fontweight='bold', ha='right', va='bottom')
+            ax.text(min_x + 0.2, min_y + 0.2, 'Lagging', color='#ef5350', fontsize=16, fontweight='bold', ha='left', va='bottom')
+            ax.text(min_x + 0.2, max_y - 0.2, 'Improving', color='#29b6f6', fontsize=16, fontweight='bold', ha='left', va='top')
 
-                ax.text(max_x - 0.2, max_y - 0.2, 'Leading', color='#26a69a', fontsize=16, fontweight='bold', ha='right', va='top')
-                ax.text(max_x - 0.2, min_y + 0.2, 'Weakening', color='#ffb300', fontsize=16, fontweight='bold', ha='right', va='bottom')
-                ax.text(min_x + 0.2, min_y + 0.2, 'Lagging', color='#ef5350', fontsize=16, fontweight='bold', ha='left', va='bottom')
-                ax.text(min_x + 0.2, max_y - 0.2, 'Improving', color='#29b6f6', fontsize=16, fontweight='bold', ha='left', va='top')
+            cmap = plt.colormaps.get_cmap('rainbow')
+            colors = [cmap(i) for i in np.linspace(0, 1, len(valid_stocks))]
 
-                cmap = plt.colormaps.get_cmap('rainbow')
-                colors = [cmap(i) for i in np.linspace(0, 1, len(valid_stocks))]
+            summary_data = []
 
-                summary_data = []
+            for idx, stock in enumerate(valid_stocks):
+                t_len = stock_tail_lengths[stock]
+                x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
+                y_trail = rs_momentum[stock].dropna().iloc[-t_len:].values
+                
+                stock_color = colors[idx]
+                t = np.arange(len(x_trail))
+                t_new = np.linspace(0, len(x_trail) - 1, 50)
+                
+                spl_x = make_interp_spline(t, x_trail, k=3)
+                spl_y = make_interp_spline(t, y_trail, k=3)
+                
+                ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
+                ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.4, zorder=5)
+                ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=90, edgecolors='white', linewidth=1.5, zorder=6)
+                
+                stock_return = pct_changes[stock]
+                sign = "+" if stock_return > 0 else ""
+                label_text = f"{stock.replace('.NS','')}\n({sign}{stock_return:.1f}%)"
+                
+                ax.annotate(label_text, (x_trail[-1], y_trail[-1]), textcoords="offset points", xytext=(0,10), 
+                            ha='center', color='#ffffff', fontsize=8, fontweight='bold', zorder=7,
+                            bbox=dict(boxstyle="round,pad=0.1", fc='#151924', alpha=0.7, edgecolor='none'))
 
-                for idx, stock in enumerate(valid_stocks):
-                    t_len = stock_tail_lengths[stock]
-                    x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
-                    y_trail = rs_momentum[stock].dropna().iloc[-t_len:].values
-                    
-                    stock_color = colors[idx]
-                    t = np.arange(len(x_trail))
-                    t_new = np.linspace(0, len(x_trail) - 1, 50)
-                    
-                    spl_x = make_interp_spline(t, x_trail, k=3)
-                    spl_y = make_interp_spline(t, y_trail, k=3)
-                    
-                    ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.2, color=stock_color, alpha=0.8, zorder=5)
-                    ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.4, zorder=5)
-                    ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=90, edgecolors='white', linewidth=1.5, zorder=6)
-                    
-                    stock_return = pct_changes[stock]
-                    sign = "+" if stock_return > 0 else ""
-                    label_text = f"{stock.replace('.NS','')}\n({sign}{stock_return:.1f}%)"
-                    
-                    ax.annotate(label_text, (x_trail[-1], y_trail[-1]), textcoords="offset points", xytext=(0,10), 
-                                ha='center', color='#ffffff', fontsize=8, fontweight='bold', zorder=7,
-                                bbox=dict(boxstyle="round,pad=0.1", fc='#151924', alpha=0.7, edgecolor='none'))
+                latest_x = round(x_trail[-1], 2)
+                latest_y = round(y_trail[-1], 2)
+                
+                if latest_x >= 100 and latest_y >= 100: quadrant = "🟩 Leading"
+                elif latest_x >= 100 and latest_y < 100: quadrant = "🟨 Weakening"
+                elif latest_x < 100 and latest_y < 100: quadrant = "🟥 Lagging"
+                else: quadrant = "🟦 Improving"
+                
+                summary_data.append({
+                    "Stock Symbol": stock.replace('.NS', ''),
+                    "Return %": round(stock_return, 2),
+                    "Trail Points (Tail)": t_len,
+                    "RS-Ratio (Strength)": latest_x,
+                    "RS-Momentum (Momentum)": latest_y,
+                    "Current State": quadrant
+                })
 
-                    latest_x = round(x_trail[-1], 2)
-                    latest_y = round(y_trail[-1], 2)
-                    
-                    if latest_x >= 100 and latest_y >= 100: quadrant = "🟩 Leading"
-                    elif latest_x >= 100 and latest_y < 100: quadrant = "🟨 Weakening"
-                    elif latest_x < 100 and latest_y < 100: quadrant = "🟥 Lagging"
-                    else: quadrant = "🟦 Improving"
-                    
-                    summary_data.append({
-                        "Stock Symbol": stock.replace('.NS', ''),
-                        "Return %": round(stock_return, 2),
-                        "Trail Points (Tail)": t_len,
-                        "RS-Ratio (Strength)": latest_x,
-                        "RS-Momentum (Momentum)": latest_y,
-                        "Current State": quadrant
-                    })
+            ax.set_xlim(min_x, max_x)
+            ax.set_ylim(min_y, max_y)
+            ax.tick_params(colors='#8a94a6', labelsize=10)
+            
+            # Pure wide-scale visualization rendering
+            st.pyplot(fig, use_container_width=True)
 
-                ax.set_xlim(min_x, max_x)
-                ax.set_ylim(min_y, max_y)
-                ax.tick_params(colors='#8a94a6', labelsize=10)
-                st.pyplot(fig)
-
-            with col2:
-                # --- FIXED: NO MORE COMPLEX HTML FOR LOOPS (ZERO INDENTATION RISK) ---
-                st.markdown("### 📈 Top Gainers")
-                df_temp = pd.DataFrame(summary_data).sort_values(by="Return %", ascending=False)
-                for _, row in df_temp.head(5).iterrows():
+            # --- DYNAMIC HORIZONTAL TOP TRACKER GRID (CHART KE NICHE) ---
+            st.markdown("### 🏆 Live Market Pulse (Top Gainers)")
+            df_temp = pd.DataFrame(summary_data).sort_values(by="Return %", ascending=False)
+            
+            # Creating dynamic grid columns horizontally
+            g_cols = st.columns(min(len(df_temp), 5))
+            for i, (idx_row, row) in enumerate(df_temp.head(5).iterrows()):
+                with g_cols[i]:
                     st.metric(label=row["Stock Symbol"], value=f"{row['Return %']}%", delta=row["Current State"])
 
-            st.markdown("### 📋 Real-Time Multi-Timeframe Data Matrix")
