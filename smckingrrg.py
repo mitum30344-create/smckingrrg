@@ -42,15 +42,18 @@ sector_indices = {
 all_index_tickers = list(sector_indices.values())
 ticker_benchmark = "^CRSLDX" # Nifty 500 Benchmark
 
-# --- 2. SIDEBAR ENGINE CONTROLS ---
+# --- 2. SIDEBAR ENGINE CONTROLS (ZOOM ENGINE REMOVED & SECTOR LIST ADDED) ---
 st.sidebar.markdown("### 🛠️ RRG Settings")
 timeframe_option = st.sidebar.selectbox("Timeframe", ["Daily", "Weekly"])
 base_tail_days = st.sidebar.slider("Tail Length", min_value=3, max_value=15, value=5)
 
-st.sidebar.markdown("### 🔍 Zoom & Pan Control")
-zoom_level = st.sidebar.slider("Zoom Scale Multiplier", min_value=1, max_value=10, value=4)
-center_shift_x = st.sidebar.slider("Pan Axis (X)", min_value=-3.0, max_value=3.0, value=0.0, step=0.1)
-center_shift_y = st.sidebar.slider("Pan Axis (Y)", min_value=-3.0, max_value=3.0, value=0.0, step=0.1)
+# Sidebar Filter replacing the zoom options
+st.sidebar.markdown("### 🗂️ Sector Filtering")
+selected_sectors_sidebar = st.sidebar.multiselect(
+    "Active Sectors Layout", 
+    list(sector_indices.keys()), 
+    default=list(sector_indices.keys())
+)
 
 if timeframe_option == "Weekly":
     interval, days_back, pct_period = "1wk", 730, 4
@@ -61,26 +64,23 @@ end_date = datetime.today()
 start_date = end_date - timedelta(days=days_back)
 
 with st.spinner("Downloading Live NSE Sectoral Feeds..."):
-    # Download single-level columns directly to avoid multi-index errors
     data = yf.download(all_index_tickers + [ticker_benchmark], start=start_date, end=end_date, interval=interval, group_by='ticker')
 
 if not data.empty:
-    # Safely parse close and volume across downloaded dictionary matrix
     close_prices = pd.DataFrame()
     volumes = pd.DataFrame()
     
     for t in all_index_tickers + [ticker_benchmark]:
-        if t in data.columns.levels[0]:
+        if t in data.columns.levels:
             close_prices[t] = data[t]['Close']
             volumes[t] = data[t]['Volume']
             
     close_prices = close_prices.dropna(subset=[ticker_benchmark])
     volumes = volumes.loc[close_prices.index]
     
-    # Accurate return calculation on 1D metrics
     pct_changes = close_prices[all_index_tickers].pct_change(periods=pct_period).iloc[-1] * 100
 
-    # RRG Matrix Calculations for Whole Sectors
+    # RRG Matrix Calculations
     rs_df = pd.DataFrame(index=close_prices.index)
     for ticker in all_index_tickers:
         rs_df[ticker] = close_prices[ticker] / close_prices[ticker_benchmark]
@@ -112,7 +112,7 @@ if not data.empty:
         else: quad = "IMPROVING"
             
         summary_list.append({
-            "Show": True,
+            "Show": inv_sector_map[ticker] in selected_sectors_sidebar,
             "SECTOR INDEX": inv_sector_map[ticker],
             "QUADRANT": quad,
             "PERFORMANCE %": round(pct_changes[ticker], 2),
@@ -155,36 +155,35 @@ if not data.empty:
                 all_x.extend(rs_ratio[ticker].dropna().iloc[-calc_tail:].values)
                 all_y.extend(rs_momentum[ticker].dropna().iloc[-calc_tail:].values)
 
-            # Zoom Calculation Matrix
-            zoom_offset = zoom_level * 0.5
-            min_x, max_x = 100.0 - zoom_offset + center_shift_x, 100.0 + zoom_offset + center_shift_x
-            min_y, max_y = 100.0 - zoom_offset + center_shift_y, 100.0 + zoom_offset + center_shift_y
+            # Auto Scale Bounds to make plot clear and centered
+            min_x, max_x = min(all_x) - 0.4, max(all_x) + 0.4
+            min_y, max_y = min(all_y) - 0.4, max(all_y) + 0.4
 
             # Canvas Frame Configuration
             fig, ax = plt.subplots(figsize=(13, 9.5), facecolor='#0e1118')
             ax.set_facecolor('#0e1118')
 
-            # StockMojo Premium Background Shading Colors
-            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#0b1d16', alpha=0.9) # LEADING
-            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#1f1b11', alpha=0.9) # WEAKENING
-            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#221415', alpha=0.9) # LAGGING
-            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#0b1826', alpha=0.9) # IMPROVING
+            # StockMojo Background Shading Colors
+            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#0b1d16', alpha=0.9) 
+            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#1f1b11', alpha=0.9) 
+            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#221415', alpha=0.9) 
+            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#0b1826', alpha=0.9) 
 
-            # Clean sleek axis borders
+            # Axis lines
             ax.axhline(100, color='#1e293b', linestyle='-', linewidth=1.5, zorder=3)
             ax.axvline(100, color='#1e293b', linestyle='-', linewidth=1.5, zorder=3)
             ax.grid(True, color='#161f30', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-            # Placement text overlays matching exact colors
-            ax.text(max_x - (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'Leading', color='#00e676', fontsize=12, fontweight='bold', ha='right', va='top')
-            ax.text(max_x - (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'Weakening', color='#ffd700', fontsize=12, fontweight='bold', ha='right', va='bottom')
-            ax.text(min_x + (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'Lagging', color='#ff5252', fontsize=12, fontweight='bold', ha='left', va='bottom')
-            ax.text(min_x + (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'Improving', color='#00b0ff', fontsize=12, fontweight='bold', ha='left', va='top')
+            # Quadrant Text Overlays
+            ax.text(max_x - 0.05, max_y - 0.05, 'Leading', color='#00e676', fontsize=12, fontweight='bold', ha='right', va='top')
+            ax.text(max_x - 0.05, min_y + 0.05, 'Weakening', color='#ffd700', fontsize=12, fontweight='bold', ha='right', va='bottom')
+            ax.text(min_x + 0.05, min_y + 0.05, 'Lagging', color='#ff5252', fontsize=12, fontweight='bold', ha='left', va='bottom')
+            ax.text(min_x + 0.05, max_y - 0.05, 'Improving', color='#00b0ff', fontsize=12, fontweight='bold', ha='left', va='top')
 
             cmap = plt.colormaps.get_cmap('gist_rainbow')
             colors = [cmap(i) for i in np.linspace(0, 0.9, len(active_tickers))]
 
-            # Interpolation Spline Plotting for Indices
+            # Interpolation Spline Plotting
             for idx, ticker in enumerate(active_tickers):
                 t_len = sector_tail_lengths[ticker]
                 x_trail = rs_ratio[ticker].dropna().iloc[-t_len:].values
@@ -201,7 +200,7 @@ if not data.empty:
                 ax.scatter(x_trail[:-1], y_trail[:-1], color=sector_color, s=15, alpha=0.5, zorder=5)
                 ax.scatter(x_trail[-1], y_trail[-1], color=sector_color, s=90, edgecolors='white', linewidth=1.5, zorder=6)
                 
-                ax.text(x_trail[-1], y_trail[-1] + (zoom_offset*0.02), inv_sector_map[ticker], color='#ffffff', 
+                ax.text(x_trail[-1], y_trail[-1] + 0.015, inv_sector_map[ticker], color='#ffffff', 
                         fontsize=8, fontweight='bold', ha='center', zorder=7)
 
             ax.set_xlim(min_x, max_x)
@@ -212,6 +211,6 @@ if not data.empty:
             
             st.pyplot(fig, use_container_width=True)
         else:
-            st.info("Left panel matrix se kisi bhi Sector Index par tick kijiye, dynamic rotation live load ho jayegi.")
+            st.info("Sectors toggle check lagayein chart render ho jayega.")
 else:
     st.error("Live indexing feed pipeline error.")
