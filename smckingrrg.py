@@ -7,12 +7,14 @@ from scipy.interpolate import make_interp_spline
 from datetime import datetime, timedelta
 
 # Page config to force full fluid wide-screen like Strike Money
-st.set_page_config(page_title="RRG Professional Dashboard", layout="wide")
+st.set_page_config(page_title="RRG Professional Studio Dashboard", layout="wide")
 
+# Dark Theme Custom Styling Layout
 st.markdown("""
     <style>
     .stApp { background-color: #151924; color: white; }
     div.stButton > button:first-child { background-color: #26a69a; color: white; border: none; }
+    .stSelectbox, .stSlider { color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -37,12 +39,18 @@ sector_map = {
     "Energy & Infrastructure": ["RELIANCE.NS", "NTPC.NS", "ADANIPORTS.NS", "GRASIM.NS", "INDIGO.NS"]
 }
 
-# --- 2. SIDEBAR PREMIUM INPUT CONTROL ENGINE ---
+# --- 2. SIDEBAR CONFIGURATION ENGINE (ALL CONTROLS MOVED TO LEFT) ---
 st.sidebar.markdown("### ⚙️ Engine Configurations")
 timeframe_option = st.sidebar.selectbox("TIMEFRAME", ["Daily", "1 Hour", "Weekly"])
 benchmark_option = st.sidebar.selectbox("BENCHMARK", ["Nifty 500 (^CRSLDX)", "Nifty 50 (^NSEI)", "Nifty Bank (^NSEBANK)"])
 selected_sector = st.sidebar.selectbox("SECTOR FILTER", list(sector_map.keys()))
 base_tail_days = st.sidebar.slider("COUNTS / DAYS (Tail)", min_value=3, max_value=15, value=5)
+
+# Interactive Zoom & Canvas Alignment Engine Controls
+st.sidebar.markdown("### 🔍 Canvas Zoom Engine")
+zoom_level = st.sidebar.slider("Zoom View Scale", min_value=1, max_value=10, value=4, help="Increase for Zoom-Out, Decrease for Zoom-In")
+center_shift_x = st.sidebar.slider("Center Alignment (X)", min_value=-3.0, max_value=3.0, value=0.0, step=0.1)
+center_shift_y = st.sidebar.slider("Center Alignment (Y)", min_value=-3.0, max_value=3.0, value=0.0, step=0.1)
 
 ticker_benchmark = benchmark_option.split("(")[-1].replace(")", "")
 
@@ -105,11 +113,12 @@ if 'Close' in data and not data['Close'].empty:
 
     df_controls = pd.DataFrame(summary_list)
 
-    # --- STRIKE MONEY UI GRID SPLIT ---
-    col_left, col_right = st.columns([1, 2]) # Gave wider layout ratio to chart panel
+    # --- STRIKE MONEY ADVANCED DESIGN GRID LAYOUT ---
+    # col_left gets 30% for table list | col_right gets 70% massive workspace for graph
+    col_left, col_right = st.columns([3, 7]) 
 
     with col_left:
-        st.markdown("### 📋 Symbols Matrix")
+        st.markdown(f"### 📋 {selected_sector} Matrix")
         edited_df = st.data_editor(
             df_controls[["Active", "SYMBOL", "QUADRANT", "PRICE (₹)", "CHANGE %"]],
             column_config={
@@ -118,7 +127,8 @@ if 'Close' in data and not data['Close'].empty:
                 "PRICE (₹)": st.column_config.NumberColumn(format="₹%.2f")
             },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key=f"editor_{selected_sector}"  # Dynamic key updates dataset on sector filters
         )
         
         active_symbols = edited_df[edited_df["Active"] == True]["SYMBOL"].tolist()
@@ -137,13 +147,20 @@ if 'Close' in data and not data['Close'].empty:
                 all_x.extend(rs_ratio[stock].dropna().iloc[-calculated_tail:].values)
                 all_y.extend(rs_momentum[stock].dropna().iloc[-calculated_tail:].values)
 
-            min_x, max_x = min(all_x) - 0.4, max(all_x) + 0.4
-            min_y, max_y = min(all_y) - 0.4, max(all_y) + 0.4
+            # --- DYNAMIC CANVAS GRAPH ZOOM LOGIC ---
+            # Using sidebar zoom configuration multipliers to set explicit scales
+            zoom_offset = zoom_level * 0.5
+            
+            min_x = 100.0 - zoom_offset + center_shift_x
+            max_x = 100.0 + zoom_offset + center_shift_x
+            min_y = 100.0 - zoom_offset + center_shift_y
+            max_y = 100.0 + zoom_offset + center_shift_y
 
-            # --- ULTRA CLEAN GRAPH FRAME ---
-            fig, ax = plt.subplots(figsize=(11, 8.5), facecolor='#151924')
+            # --- ULTRA CLEAN PREMIUM MATPLOTLIB CANVAS ---
+            fig, ax = plt.subplots(figsize=(12, 9), facecolor='#151924')
             ax.set_facecolor('#151924')
 
+            # Soft transperant background matrix layers
             ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) 
             ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) 
             ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) 
@@ -153,14 +170,16 @@ if 'Close' in data and not data['Close'].empty:
             ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
             ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-            ax.text(max_x, max_y, 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
-            ax.text(max_x, min_y, 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
-            ax.text(min_x, min_y, 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
-            ax.text(min_x, max_y, 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
+            # Corner placement logic updates dynamically based on scaling sliders
+            ax.text(max_x - (zoom_offset*0.05), max_y - (zoom_offset*0.05), 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
+            ax.text(max_x - (zoom_offset*0.05), min_y + (zoom_offset*0.05), 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
+            ax.text(min_x + (zoom_offset*0.05), min_y + (zoom_offset*0.05), 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
+            ax.text(min_x + (zoom_offset*0.05), max_y - (zoom_offset*0.05), 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
 
             cmap = plt.colormaps.get_cmap('rainbow')
             colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
 
+            # Premium Spline Engine Rendering
             for idx, stock in enumerate(active_tickers):
                 t_len = stock_tail_lengths[stock]
                 x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
@@ -177,15 +196,3 @@ if 'Close' in data and not data['Close'].empty:
                 ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.5, zorder=5)
                 ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=80, edgecolors='white', linewidth=1.2, zorder=6)
                 
-                ax.text(x_trail[-1], y_trail[-1] + 0.04, stock.replace('.NS',''), color='#ffffff', 
-                        fontsize=8, fontweight='bold', ha='center', zorder=7)
-
-            ax.set_xlim(min_x, max_x)
-            ax.set_ylim(min_y, max_y)
-            ax.tick_params(colors='#616d82', labelsize=9)
-            
-            st.pyplot(fig, use_container_width=True)
-        else:
-            st.info("Left checklist matrix se checkbox par tick kijiye, tickers automatic graph frame par load ho jayenge.")
-else:
-    st.error("Market pipeline syncing break.")
