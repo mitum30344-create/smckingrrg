@@ -9,15 +9,18 @@ from datetime import datetime, timedelta
 # Page configuration for complete layout scaling
 st.set_page_config(page_title="RRG Professional Studio Dashboard", layout="wide")
 
+# --- PREMIUM STOCKMOJO STYLING BLOCK ---
 st.markdown("""
     <style>
-    .stApp { background-color: #151924; color: white; }
-    div.stButton > button:first-child { background-color: #26a69a; color: white; border: none; }
-    .stSelectbox, .stSlider { color: white !important; }
+    .stApp { background-color: #0e1118; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+    div.stButton > button:first-child { background-color: #00e676; color: #0e1118; border: none; font-weight: bold; }
+    .stSelectbox, .stSlider { color: #ffffff !important; }
+    .stExpander { background-color: #161b26 !important; border: 1px solid #232d3f !important; border-radius: 6px !important; margin-bottom: 8px !important;}
+    h1, h2, h3 { color: #ffffff !important; font-weight: 700 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 Relative Rotation Graph (RRG) - Premium Studio")
+st.title("📊 Relative Rotation Graph (RRG) Studio")
 
 # --- 1. SECTOR / STOCK CORE DATA ---
 sector_map = {
@@ -30,7 +33,6 @@ sector_map = {
     "Energy & Infrastructure": ["RELIANCE.NS", "NTPC.NS", "ADANIPORTS.NS", "GRASIM.NS", "INDIGO.NS"]
 }
 
-# Full flat list for background data download pipeline
 all_unique_stocks = list(set([stock for sector in sector_map.values() for stock in sector]))
 
 # --- 2. SIDEBAR ENGINE CONTROLS ---
@@ -59,7 +61,6 @@ start_date = end_date - timedelta(days=days_back)
 with st.spinner("Syncing Live Market Feeds..."):
     data = yf.download(all_unique_stocks + [ticker_benchmark], start=start_date, end=end_date, interval=interval)
 
-# --- CLEAN PIPELINE: ABSOLUTE ERROR PROTECTION (IF/ELSE BLOCKS REMOVED) ---
 close_prices = data['Close'].dropna()
 volumes = data['Volume'].loc[close_prices.index]
 
@@ -105,13 +106,13 @@ for stock in all_unique_stocks:
 
 df_master = pd.DataFrame(summary_list)
 
-# --- FIXED GRID PROPORTION RATIO [1, 2.5] ---
-col_left, col_right = st.columns([1, 2.5]) 
+# --- FIXED GRID PROPORTION RATIO ---
+col_left, col_right = st.columns([1, 2.3]) 
 
 active_tickers = []
 
 with col_left:
-    st.markdown("### 🗂️ Sector Folders")
+    st.markdown("### 📁 Sector Folders")
     for sector_name, stock_list in sector_map.items():
         clean_names = [s.replace('.NS', '') for s in stock_list]
         df_sector_subset = df_master[df_master["SYMBOL"].isin(clean_names)].copy()
@@ -131,7 +132,7 @@ with col_left:
             active_tickers.extend([s + ".NS" for s in sub_active])
 
 with col_right:
-    st.markdown("### 📊 RRG Visual Canvas")
+    st.markdown("### 🎛️ RRG Visual Canvas")
     if len(active_tickers) >= 1:
         all_x, all_y = [], []
         stock_tail_lengths = {}
@@ -148,22 +149,25 @@ with col_right:
         min_x, max_x = 100.0 - zoom_offset + center_shift_x, 100.0 + zoom_offset + center_shift_x
         min_y, max_y = 100.0 - zoom_offset + center_shift_y, 100.0 + zoom_offset + center_shift_y
 
-        fig, ax = plt.subplots(figsize=(14, 9.5), facecolor='#151924')
-        ax.set_facecolor('#151924')
+        fig, ax = plt.subplots(figsize=(13, 9), facecolor='#0e1118')
+        ax.set_facecolor('#0e1118')
 
-        ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) 
-        ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) 
-        ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) 
-        ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) 
+        # --- EXACT STOCKMOJO UNIFORM HIGH-CONTRAST SHADES ---
+        ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#0b1d16', alpha=0.9) # LEADING
+        ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#1f1b11', alpha=0.9) # WEAKENING
+        ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#221415', alpha=0.9) # LAGGING
+        ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#0b1826', alpha=0.9) # IMPROVING
 
-        ax.axhline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
-        ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
-        ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
+        # Matrix axes
+        ax.axhline(100, color='#1e293b', linestyle='-', linewidth=1.5, zorder=3)
+        ax.axvline(100, color='#1e293b', linestyle='-', linewidth=1.5, zorder=3)
+        ax.grid(True, color='#161f30', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-        ax.text(max_x - (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
-        ax.text(max_x - (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
-        ax.text(min_x + (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
-        ax.text(min_x + (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'IMPROVING', color='#29b6f6', fontsize=11, fontweight='bold', ha='left', va='top')
+        # Dynamic clean labels aligned with StockMojo design protocols
+        ax.text(max_x - (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'LEADING', color='#00e676', fontsize=11, fontweight='bold', ha='right', va='top')
+        ax.text(max_x - (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'WEAKENING', color='#ffd700', fontsize=11, fontweight='bold', ha='right', va='bottom')
+        ax.text(min_x + (zoom_offset*0.03), min_y + (zoom_offset*0.03), 'LAGGING', color='#ff5252', fontsize=11, fontweight='bold', ha='left', va='bottom')
+        ax.text(min_x + (zoom_offset*0.03), max_y - (zoom_offset*0.03), 'IMPROVING', color='#00b0ff', fontsize=11, fontweight='bold', ha='left', va='top')
 
         cmap = plt.colormaps.get_cmap('rainbow')
         colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
@@ -189,7 +193,7 @@ with col_right:
 
         ax.set_xlim(min_x, max_x)
         ax.set_ylim(min_y, max_y)
-        ax.tick_params(colors='#616d82', labelsize=9)
+        ax.tick_params(colors='#475569', labelsize=9)
         
         st.pyplot(fig, use_container_width=True)
     else:
