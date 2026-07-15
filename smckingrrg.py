@@ -64,11 +64,9 @@ if 'Close' in data and not data['Close'].empty:
     close_prices = data['Close'].dropna()
     volumes = data['Volume'].loc[close_prices.index]
     
-    # Live Last Price & % Change calculation
     last_prices = close_prices[sector_stocks].iloc[-1]
     pct_changes = close_prices[sector_stocks].pct_change(periods=pct_period).iloc[-1] * 100
 
-    # RRG Vector Engineering Matrix
     rs_df = pd.DataFrame(index=close_prices.index)
     for stock in sector_stocks:
         rs_df[stock] = close_prices[stock] / close_prices[ticker_benchmark]
@@ -87,7 +85,6 @@ if 'Close' in data and not data['Close'].empty:
     mom_std = raw_momentum.rolling(window=14).std()
     rs_momentum = 100 + ((raw_momentum - mom_mean) / (mom_std + 1e-8)) * 1.2
 
-    # Parse and structural loop generation
     summary_list = []
     for stock in sector_stocks:
         x_val = rs_ratio[stock].dropna().iloc[-1]
@@ -103,20 +100,16 @@ if 'Close' in data and not data['Close'].empty:
             "SYMBOL": stock.replace('.NS', ''),
             "QUADRANT": quad,
             "PRICE (₹)": round(last_prices[stock], 2),
-            "CHANGE %": round(pct_changes[stock], 2),
-            "raw_x": x_ratio_val := rs_ratio[stock].dropna(),
-            "raw_y": y_momentum_val := rs_momentum[stock].dropna()
+            "CHANGE %": round(pct_changes[stock], 2)
         })
 
     df_controls = pd.DataFrame(summary_list)
 
     # --- STRIKE MONEY UI GRID SPLIT ---
-    # Left Column: Interactive Watchlist Table Matrix | Right Column: Clean RRG Chart Frame [1]
-    col_left, col_right = st.columns([2, 3]) 
+    col_left, col_right = st.columns([1, 2]) # Gave wider layout ratio to chart panel
 
     with col_left:
         st.markdown("### 📋 Symbols Matrix")
-        # Streamlit Data Editor acts as clickable table lists with checkboxes [1]
         edited_df = st.data_editor(
             df_controls[["Active", "SYMBOL", "QUADRANT", "PRICE (₹)", "CHANGE %"]],
             column_config={
@@ -128,7 +121,6 @@ if 'Close' in data and not data['Close'].empty:
             use_container_width=True
         )
         
-        # Filter stocks live based on checkbox table selections
         active_symbols = edited_df[edited_df["Active"] == True]["SYMBOL"].tolist()
         active_tickers = [s + ".NS" for s in active_symbols]
 
@@ -152,18 +144,15 @@ if 'Close' in data and not data['Close'].empty:
             fig, ax = plt.subplots(figsize=(11, 8.5), facecolor='#151924')
             ax.set_facecolor('#151924')
 
-            # Soft transperant uniform quadrants
-            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) # Leading
-            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) # Weakening
-            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) # Lagging
-            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) # Improving
+            ax.axvspan(100, max_x + 5, ymin=0.5, ymax=1.0, facecolor='#162620', alpha=0.9) 
+            ax.axvspan(100, max_x + 5, ymin=0.0, ymax=0.5, facecolor='#2b241a', alpha=0.9) 
+            ax.axvspan(min_x - 5, 100, ymin=0.0, ymax=0.5, facecolor='#2a1a1c', alpha=0.9) 
+            ax.axvspan(min_x - 5, 100, ymin=0.5, ymax=1.0, facecolor='#162032', alpha=0.9) 
 
-            # Thin clean axis borders
             ax.axhline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
             ax.axvline(100, color='#2c3240', linestyle='-', linewidth=1.5, zorder=3)
             ax.grid(True, color='#202430', linestyle='-', linewidth=0.6, alpha=0.7, zorder=1)
 
-            # Clean outer corner quadrant labels matching Strike Money [1]
             ax.text(max_x, max_y, 'LEADING', color='#26a69a', fontsize=11, fontweight='bold', ha='right', va='top')
             ax.text(max_x, min_y, 'WEAKENING', color='#ffb300', fontsize=11, fontweight='bold', ha='right', va='bottom')
             ax.text(min_x, min_y, 'LAGGING', color='#ef5350', fontsize=11, fontweight='bold', ha='left', va='bottom')
@@ -172,7 +161,6 @@ if 'Close' in data and not data['Close'].empty:
             cmap = plt.colormaps.get_cmap('rainbow')
             colors = [cmap(i) for i in np.linspace(0, 1, len(active_tickers))]
 
-            # Premium Spline Curves Plotting Engine
             for idx, stock in enumerate(active_tickers):
                 t_len = stock_tail_lengths[stock]
                 x_trail = rs_ratio[stock].dropna().iloc[-t_len:].values
@@ -180,18 +168,16 @@ if 'Close' in data and not data['Close'].empty:
                 
                 stock_color = colors[idx]
                 t = np.arange(len(x_trail))
-                t_new = np.linspace(0, len(x_trail) - 1, 60) # High density subpoints
+                t_new = np.linspace(0, len(x_trail) - 1, 60)
                 
                 spl_x = make_interp_spline(t, x_trail, k=3)
                 spl_y = make_interp_spline(t, y_trail, k=3)
                 
-                # Plot dynamic fluid line curves
                 ax.plot(spl_x(t_new), spl_y(t_new), linestyle='-', linewidth=2.0, color=stock_color, alpha=0.8, zorder=5)
                 ax.scatter(x_trail[:-1], y_trail[:-1], color=stock_color, s=15, alpha=0.5, zorder=5)
                 ax.scatter(x_trail[-1], y_trail[-1], color=stock_color, s=80, edgecolors='white', linewidth=1.2, zorder=6)
                 
-                # Small elegant floating stock name tag text
-                ax.text(x_trail[-1], y_trail[-1] + 0.05, stock.replace('.NS',''), color='#ffffff', 
+                ax.text(x_trail[-1], y_trail[-1] + 0.04, stock.replace('.NS',''), color='#ffffff', 
                         fontsize=8, fontweight='bold', ha='center', zorder=7)
 
             ax.set_xlim(min_x, max_x)
@@ -200,6 +186,6 @@ if 'Close' in data and not data['Close'].empty:
             
             st.pyplot(fig, use_container_width=True)
         else:
-            st.info("Please select checkboxes from the left panel table to load live trailing vectors.")
+            st.info("Left checklist matrix se checkbox par tick kijiye, tickers automatic graph frame par load ho jayenge.")
 else:
-    st.error("Data processing downtime. Check back during market sessions.")
+    st.error("Market pipeline syncing break.")
